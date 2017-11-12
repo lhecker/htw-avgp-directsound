@@ -1,0 +1,6 @@
+[submodule "src/GSL"]
+	path = src/GSL
+	url = https://github.com/Microsoft/GSL.git
+[submodule "src/cppwinrt"]
+	path = src/cppwinrt
+	url = https://github.com/Microsoft/cppwinrt.git
