@@ -23,7 +23,7 @@ direct_sound::direct_sound(HWND hwnd) {
 direct_sound::~direct_sound() {
 }
 
-std::tuple<winrt::com_ptr<IDirectSoundBuffer8>, WAVEFORMATEX, DSBUFFERDESC> direct_sound::create_pcm_buffer(size_t channels, size_t bits_per_sample, size_t samples_per_sec, size_t seconds) {
+std::tuple<winrt::com_ptr<IDirectSoundBuffer8>, buffer_info> direct_sound::create_pcm_buffer(size_t channels, size_t bits_per_sample, size_t samples_per_sec, size_t seconds) {
 	if (channels > 12) {
 		throw std::invalid_argument(string_format("invalid argument for channel: %zu > 12", channels));
 	}
@@ -37,6 +37,7 @@ std::tuple<winrt::com_ptr<IDirectSoundBuffer8>, WAVEFORMATEX, DSBUFFERDESC> dire
 		throw std::invalid_argument(string_format("invalid argument for seconds (overflow): %zu", seconds));
 	}
 
+	const auto samples = seconds * samples_per_sec;
 	const auto block_align = (channels * bits_per_sample) / 8;
 	const auto bytes_per_sec = block_align * samples_per_sec;
 
@@ -54,12 +55,11 @@ std::tuple<winrt::com_ptr<IDirectSoundBuffer8>, WAVEFORMATEX, DSBUFFERDESC> dire
 	description.dwBufferBytes = DWORD(bytes_per_sec * seconds);
 	description.lpwfxFormat = &format;
 
-	winrt::com_ptr<IDirectSoundBuffer> sb;
-	winrt::check_hresult(m_com->CreateSoundBuffer(&description, sb.put(), nullptr));
+	winrt::com_ptr<IDirectSoundBuffer> com;
+	winrt::check_hresult(m_com->CreateSoundBuffer(&description, com.put(), nullptr));
 
 	return {
-		sb.as<IDirectSoundBuffer8>(),
-		format,
-		description,
+		com.as<IDirectSoundBuffer8>(),
+		buffer_info(samples_per_sec, samples),
 	};
 }

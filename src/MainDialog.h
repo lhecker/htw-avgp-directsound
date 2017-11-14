@@ -20,7 +20,7 @@ private:
 
 	HICON m_hIcon;
 	direct_sound ds;
-	buffer<int16_t, 2> buffer;
+	double_buffer<int16_t, 2> buffer;
 
 public:
 	afx_msg void OnPaint();

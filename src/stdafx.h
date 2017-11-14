@@ -9,43 +9,46 @@
 //#define new DEBUG_NEW
 //#endif
 
-// Exclude rarely-used stuff from Windows headers
+// Exclude rarely-used stuff from Windows headers.
 #define VC_EXTRALEAN
 
-// Prevent the definition of the min()/max() macros
+// Prevent the definition of the min()/max() macros.
 #define NOMINMAX
 
-// Make CString constructors explicit
+// Make CString constructors explicit.
 #define _ATL_CSTRING_EXPLICIT_CONSTRUCTORS
 
-// Enable all of MFC's warning messages
+// Enable all of MFC's warning messages.
 #define _AFX_ALL_WARNINGS
 
-// Enable M_PI etc. defines
+// Enable M_PI etc. defines.
 #define _USE_MATH_DEFINES
 
-// MFC core and standard components + extensions
+// Make Expect/Ensure throw gsl::fail_fast with a detailed debug description, instead of terminating the program.
+#define GSL_THROW_ON_CONTRACT_VIOLATION
+
+// MFC core and standard components + extensions.
 #include <afxwin.h>
 #include <afxext.h>
 
-// Defining NOMINMAX is incompatible with GDI+ which we have to patch here
+// Defining NOMINMAX is incompatible with GDI+ which we have to patch here.
 #define min(x,y) ((x) < (y) ? (x) : (y))
 #define max(x,y) ((x) > (y) ? (x) : (y))
 #include <gdiplus.h>
 #undef min
 #undef max
 
-// MFC support for Internet Explorer 4 Common Controls
+// MFC support for Internet Explorer 4 Common Controls.
 #ifndef _AFX_NO_OLE_SUPPORT
 #include <afxdtctl.h>
 #endif
 
-// MFC support for Windows Common Controls
+// MFC support for Windows Common Controls.
 #ifndef _AFX_NO_AFXCMN_SUPPORT
 #include <afxcmn.h>
 #endif
 
-// MFC support for ribbons and control bars
+// MFC support for ribbons and control bars.
 #include <afxcontrolbars.h>
 
 #include <mmsystem.h>

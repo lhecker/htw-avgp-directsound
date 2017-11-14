@@ -1,5 +1,33 @@
 #include "stdafx.h"
 
+std::string string_wide_to_utf8(const std::wstring_view wstr) {
+	if (wstr.empty()) {
+		return std::string();
+	}
+	if (wstr.size() > size_t(std::numeric_limits<int>::max())) {
+		throw std::length_error("input string too long");
+	}
+
+	const int size_needed = WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(), NULL, 0, NULL, NULL);
+	std::string str(size_needed, 0);
+	WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(), &str[0], size_needed, NULL, NULL);
+	return str;
+}
+
+std::wstring string_utf8_to_wide(const std::string_view str) {
+	if (str.empty()) {
+		return std::wstring();
+	}
+	if (str.size() > size_t(std::numeric_limits<int>::max())) {
+		throw std::length_error("input string too long");
+	}
+
+	const int size_needed = MultiByteToWideChar(CP_UTF8, 0, &str[0], (int)str.size(), NULL, 0);
+	std::wstring wstr(size_needed, 0);
+	MultiByteToWideChar(CP_UTF8, 0, &str[0], (int)str.size(), &wstr[0], size_needed);
+	return wstr;
+}
+
 std::wstring_view cstring_view(const CSimpleString& str) {
 	return std::wstring_view(str, str.GetLength());
 }
