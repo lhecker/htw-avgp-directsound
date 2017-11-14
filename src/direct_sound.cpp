@@ -23,7 +23,7 @@ direct_sound::direct_sound(HWND hwnd) {
 direct_sound::~direct_sound() {
 }
 
-std::tuple<winrt::com_ptr<IDirectSoundBuffer8>, buffer_info> direct_sound::create_pcm_buffer(size_t channels, size_t bits_per_sample, size_t samples_per_sec, size_t seconds) {
+std::tuple<winrt::com_ptr<IDirectSoundBuffer8>, buffer_info> direct_sound::create_pcm_buffer(size_t channels, size_t bits_per_sample, size_t samples_per_sec, size_t samples) {
 	if (channels > 12) {
 		throw std::invalid_argument(string_format("invalid argument for channel: %zu > 12", channels));
 	}
@@ -33,13 +33,15 @@ std::tuple<winrt::com_ptr<IDirectSoundBuffer8>, buffer_info> direct_sound::creat
 	if (samples_per_sec > 192000) {
 		throw std::invalid_argument(string_format("invalid argument for samples_per_sec: %zu > 192000", samples_per_sec));
 	}
-	if (seconds > std::numeric_limits<WORD>::max()) {
-		throw std::invalid_argument(string_format("invalid argument for seconds (overflow): %zu", seconds));
+
+	const auto block_align = (channels * bits_per_sample) / 8;
+	const auto bytes_per_sec = samples_per_sec * block_align;
+
+	if (samples > std::numeric_limits<DWORD>::max() / block_align) {
+		throw std::invalid_argument(string_format("invalid argument for samples (overflow): %zu", samples));
 	}
 
-	const auto samples = seconds * samples_per_sec;
-	const auto block_align = (channels * bits_per_sample) / 8;
-	const auto bytes_per_sec = block_align * samples_per_sec;
+	const auto buffer_bytes = samples * block_align;
 
 	WAVEFORMATEX format = {};
 	format.wFormatTag = WAVE_FORMAT_PCM;
@@ -52,7 +54,7 @@ std::tuple<winrt::com_ptr<IDirectSoundBuffer8>, buffer_info> direct_sound::creat
 	DSBUFFERDESC description = {};
 	description.dwSize = sizeof(description);
 	description.dwFlags = DSBCAPS_CTRLFREQUENCY | DSBCAPS_CTRLPAN | DSBCAPS_CTRLVOLUME | DSBCAPS_CTRLPOSITIONNOTIFY | DSBCAPS_GLOBALFOCUS | DSBCAPS_GETCURRENTPOSITION2;
-	description.dwBufferBytes = DWORD(bytes_per_sec * seconds);
+	description.dwBufferBytes = DWORD(buffer_bytes);
 	description.lpwfxFormat = &format;
 
 	winrt::com_ptr<IDirectSoundBuffer> com;

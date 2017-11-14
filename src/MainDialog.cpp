@@ -26,8 +26,8 @@ BOOL MainDialog::OnInitDialog() {
 	SetIcon(m_hIcon, FALSE); // Set small icon
 
 	ds = direct_sound(m_hWnd);
-	auto provider = double_buffer<int16_t, 2>::create_sine_wave_provider(264);
-	buffer = ds.create_double_buffer<int16_t, 2>(44100, 1, provider);
+	auto provider = double_buffer<int16_t, 2>::create_sine_wave_provider(100);
+	buffer = ds.create_double_buffer<int16_t, 2>(192000, std::chrono::milliseconds(500), provider);
 	buffer.play(true);
 
 	return TRUE; // return TRUE unless you set the focus to a control

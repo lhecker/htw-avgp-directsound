@@ -16,6 +16,36 @@ inline constexpr GUID const& guid_of<IDirectSoundNotify8>() noexcept {
 
 }
 
+class handle_deleter {
+public:
+	constexpr handle_deleter() {}
+	handle_deleter(handle_deleter&&) = default;
+	handle_deleter& operator=(handle_deleter&&) = default;
+	handle_deleter(const handle_deleter&) = default;
+	handle_deleter& operator=(const handle_deleter&) = default;
+
+	void operator()(HANDLE handle) const {
+		if (!CloseHandle(handle)) {
+			winrt::throw_last_error();
+		}
+	};
+};
+
+class wait_handle_deleter {
+public:
+	constexpr wait_handle_deleter() {}
+	wait_handle_deleter(wait_handle_deleter&&) = default;
+	wait_handle_deleter& operator=(wait_handle_deleter&&) = default;
+	wait_handle_deleter(const wait_handle_deleter&) = default;
+	wait_handle_deleter& operator=(const wait_handle_deleter&) = default;
+
+	void operator()(HANDLE handle) const {
+		if (!UnregisterWaitEx(handle, INVALID_HANDLE_VALUE)) {
+			winrt::throw_last_error();
+		}
+	};
+};
+
 template<typename SampleType>
 class buffer_lock {
 public:
@@ -56,11 +86,6 @@ public:
 	constexpr buffer_info(size_t samples_per_second, size_t samples) : samples_per_second(samples_per_second), samples(samples) {
 	}
 
-	buffer_info(buffer_info&&) = default;
-	buffer_info& operator=(buffer_info&&) = default;
-	buffer_info(const buffer_info&) = default;
-	buffer_info& operator=(const buffer_info&) = default;
-
 	size_t samples_per_second;
 	size_t samples;
 };
@@ -77,14 +102,8 @@ public:
 	explicit buffer(winrt::com_ptr<IDirectSoundBuffer8> com, buffer_info info) noexcept : m_com(std::move(com)), m_info(info) {
 	}
 
-	buffer(buffer&& other) : m_com(std::move(other.m_com)), m_info(other.m_info) {
-	}
-
-	buffer& operator=(buffer&& other) {
-		m_com = std::move(other.m_com);
-		m_info = other.m_info;
-		return *this;
-	}
+	buffer(buffer&&) = default;
+	buffer& operator=(buffer&&) = default;
 
 	buffer(const buffer&) = delete;
 	buffer& operator=(const buffer&) = delete;
@@ -134,10 +153,10 @@ public:
 		return lock;
 	}
 
-	buffer_lock<SampleType> lock_sec(size_t offset, size_t seconds) {
+	buffer_lock<SampleType> lock_sec(std::chrono::duration<double> offset, std::chrono::duration<double> seconds) {
 		// TODO: Overflow
 		const auto bytes_per_second = bytes_per_second();
-		return lock(offset * bytes_per_second, seconds * bytes_per_second);
+		return lock(offset.count() * bytes_per_second, seconds.count() * bytes_per_second);
 	}
 
 protected:
@@ -153,62 +172,54 @@ public:
 	explicit double_buffer() noexcept {
 	}
 
-	explicit double_buffer(winrt::com_ptr<IDirectSoundBuffer8> com, buffer_info info, provider_function provider) : buffer(std::move(com), info), m_provider(std::move(provider)) {
-		m_notify_handle = CreateEvent(0, false, false, nullptr);
-		if (!m_notify_handle) {
-			winrt::throw_last_error();
+	explicit double_buffer(winrt::com_ptr<IDirectSoundBuffer8> com, buffer_info info, provider_function provider) : buffer(std::move(com), info) {
+		m_provider = std::move(provider);
+		m_state = std::make_unique<std::atomic<uint_fast8_t>>(uint_fast8_t(1));
+
+		{
+			HANDLE handle = CreateEvent(nullptr, false, false, nullptr);
+
+			if (!handle) {
+				winrt::throw_last_error();
+			}
+
+			m_notify_handle.reset(handle);
 		}
 
-		std::array<DSBPOSITIONNOTIFY, 2> positions{{
-			{ 0, m_notify_handle },
-			{ DWORD(buffer_bytes() / 2), m_notify_handle },
-		}};
-		set_notify(positions);
+		{
+			std::array<DSBPOSITIONNOTIFY, 2> positions{{
+				{ 0, m_notify_handle.get() },
+				{ DWORD(buffer_bytes() / 2), m_notify_handle.get() },
+			}};
+			auto notify = m_com.as<IDirectSoundNotify8>();
+			winrt::check_hresult(notify->SetNotificationPositions(DWORD(positions.size()), positions.data()));
+		}
 
 		fill_half(false);
 	}
 
-	double_buffer(double_buffer&& other) : other.expect_move_allowed(), buffer(std::forward(other)), m_notify_handle(other.m_notify_handle), m_wait_handle(other.m_wait_handle), m_provider(std::move(provider)) {
-		other.m_notify_handle = nullptr;
-		other.m_wait_handle = nullptr;
-	}
-
-	double_buffer& operator=(double_buffer&& other) {
-		expect_move_allowed();
-		other.expect_move_allowed();
-
-		set_notify(nullptr);
-		close_notify_handle();
-		m_com = nullptr;
-
-		buffer::operator=(std::forward<double_buffer>(other));
-
-		m_notify_handle = other.m_notify_handle;
-		m_wait_handle = other.m_wait_handle;
-		other.m_notify_handle = nullptr;
-		other.m_wait_handle = nullptr;
-
-		m_provider = std::move(other.m_provider);
-
-		return *this;
-	}
+	double_buffer(double_buffer&&) = default;
+	double_buffer& operator=(double_buffer&&) = default;
 
 	double_buffer(const double_buffer&) = delete;
 	double_buffer& operator=(const double_buffer&) = delete;
 
-	~double_buffer() {
-		unregister_wait();
-		close_notify_handle();
-	}
-
 	void play(bool looping = false) {
-		register_wait();
+		if (m_wait_handle) {
+			return;
+		}
+
+		create_wait_handle();
 		buffer::play(looping);
 	}
 
 	void stop() {
+		if (!m_wait_handle) {
+			return;
+		}
+
 		buffer::stop();
-		unregister_wait();
+		m_wait_handle.reset();
 	}
 
 	static auto create_sine_wave_provider(size_t frequency) {
@@ -230,74 +241,53 @@ public:
 			}
 
 			idx %= info.samples_per_second;
-			frequency += 10;
+			frequency += 100;
 		};
 	}
 
 private:
 	static void wait_callback(PVOID context, BOOLEAN) noexcept {
-		try {
-			static_cast<double_buffer*>(context)->swap_and_fill();
-		} catch (const std::exception& e) {
-			debug_print(L"%s\n", string_utf8_to_wide(e.what()).c_str());
-			std::terminate();
-		}
+		static_cast<double_buffer*>(context)->swap_and_fill();
 	}
 
 	void swap_and_fill() {
-		fill_half(m_state.fetch_xor(1));
+		fill_half(m_state->fetch_xor(1));
 	}
 
 	void fill_half(bool second_half) {
 		const auto half_width = buffer_bytes() / 2;
 		auto lock = this->lock(second_half ? half_width : 0, half_width);
-		SpanPairType spans = lock.spans();
-		buffer_info info = m_info;
-
-		m_provider(spans, m_info);
+		m_provider(lock.spans(), m_info);
 	}
 
 	void expect_move_allowed() {
 		Expects(!m_wait_handle);
 	}
 
-	void set_notify(gsl::span<DSBPOSITIONNOTIFY> positions) {
-		if (m_com) {
-			auto notify = m_com.as<IDirectSoundNotify8>();
-			winrt::check_hresult(notify->SetNotificationPositions(DWORD(positions.size()), positions.data()));
-		}
-	}
+	void create_wait_handle() {
+		m_wait_handle.release();
 
-	void register_wait() {
-		if (!m_wait_handle) {
-			if (!RegisterWaitForSingleObject(&m_wait_handle, m_notify_handle, &wait_callback, this, INFINITE, WT_EXECUTEDEFAULT)) {
-				winrt::throw_last_error();
-			}
-		}
-	}
+		HANDLE handle;
 
-	void unregister_wait() noexcept {
-		if (m_wait_handle) {
-#pragma warning(suppress:6031)
-			UnregisterWaitEx(m_wait_handle, INVALID_HANDLE_VALUE);
-			m_wait_handle = nullptr;
+		if (!RegisterWaitForSingleObject(&handle, m_notify_handle.get(), &wait_callback, this, INFINITE, WT_EXECUTEDEFAULT)) {
+			winrt::throw_last_error();
 		}
-	}
 
-	void close_notify_handle() {
-		if (m_notify_handle) {
-			CloseHandle(m_notify_handle);
-		}
+		m_wait_handle.reset(handle);
 	}
 
 	provider_function m_provider;
-	HANDLE m_notify_handle = nullptr;
-	HANDLE m_wait_handle = nullptr;
+
+	// The order of these members is important:
+	// The notify handle has to be initialized before the wait handle and they
+	// must be destroyed in reverse order as the latter depends on the former.
+	std::unique_ptr<void, handle_deleter> m_notify_handle;
+	std::unique_ptr<void, wait_handle_deleter> m_wait_handle;
 
 	// Always contains the half that should be filled *next*.
 	// 0 = first half
 	// 1 = second half
-	std::atomic<std::uint_fast8_t> m_state = 1;
+	std::unique_ptr<std::atomic<uint_fast8_t>> m_state;
 };
 
 class direct_sound {
@@ -314,29 +304,38 @@ public:
 	~direct_sound();
 
 	template<typename ValueType, size_t ChannelCount>
-	buffer<ValueType, ChannelCount> create_buffer(size_t samples_per_sec, size_t seconds) {
-		auto[com, info] = create_pcm_buffer(ChannelCount, sizeof(ValueType) * 8, samples_per_sec, seconds);
+	buffer<ValueType, ChannelCount> create_buffer(size_t samples_per_sec, size_t samples) {
+		const auto[com, info] = create_pcm_buffer(ChannelCount, sizeof(ValueType) * 8, samples_per_sec, samples);
 		return buffer<ValueType, ChannelCount>(com, info);
+	}
+
+	template<typename ValueType, size_t ChannelCount, typename DurationRep, typename DurationPeriod>
+	buffer<ValueType, ChannelCount> create_buffer(size_t samples_per_sec, std::chrono::duration<DurationRep, DurationPeriod> duration) {
+		const size_t samples = duration_to_samples(samples_per_sec, duration);
+		return create_buffer<ValueType, ChannelCount>(samples_per_sec, samples);
 	}
 
 	// NOTE: Callbacks to `provider` happen from background threads!
 	template<typename ValueType, size_t ChannelCount>
-	double_buffer<ValueType, ChannelCount> create_double_buffer(size_t samples_per_sec, size_t seconds, typename double_buffer<ValueType, ChannelCount>::provider_function provider) {
-		constexpr size_t size_t_highest_bit = (std::numeric_limits<size_t>::max() >> 1) + 1;
-
-		// If the highest bit in seconds is set we can't safely multiply by 2 (or left-shift by 1) below anymore,
-		// since by doing so that bit would be lost.
-		if (seconds & size_t_highest_bit) {
-			throw std::invalid_argument(string_format("invalid argument for seconds (overflow): %zu", seconds));
-		}
-
-		auto[com, info] = create_pcm_buffer(ChannelCount, sizeof(ValueType) * 8, samples_per_sec, seconds << 1);
+	double_buffer<ValueType, ChannelCount> create_double_buffer(size_t samples_per_sec, size_t samples, typename double_buffer<ValueType, ChannelCount>::provider_function provider) {
+		const auto[com, info] = create_pcm_buffer(ChannelCount, sizeof(ValueType) * 8, samples_per_sec, samples * 2);
 		return double_buffer<ValueType, ChannelCount>(com, info, std::move(provider));
+	}
+
+	template<typename ValueType, size_t ChannelCount, typename DurationRep, typename DurationPeriod>
+	double_buffer<ValueType, ChannelCount> create_double_buffer(size_t samples_per_sec, std::chrono::duration<DurationRep, DurationPeriod> duration, typename double_buffer<ValueType, ChannelCount>::provider_function provider) {
+		const size_t samples = duration_to_samples(samples_per_sec, duration);
+		return create_double_buffer<ValueType, ChannelCount>(samples_per_sec, samples, provider);
+	}
+
+	template<typename Rep, class Period>
+	static inline size_t duration_to_samples(size_t samples_per_sec, std::chrono::duration<Rep, Period> duration) {
+		return size_t(static_cast<std::chrono::duration<double>>(duration).count() * samples_per_sec);
 	}
 
 private:
 
-	std::tuple<winrt::com_ptr<IDirectSoundBuffer8>, buffer_info> create_pcm_buffer(size_t channels, size_t bits_per_sample, size_t samples_per_sec, size_t seconds);
+	std::tuple<winrt::com_ptr<IDirectSoundBuffer8>, buffer_info> create_pcm_buffer(size_t channels, size_t bits_per_sample, size_t samples_per_sec, size_t samples);
 
 	winrt::com_ptr<IDirectSound8> m_com;
 	winrt::com_ptr<IDirectSoundBuffer> m_primary;
