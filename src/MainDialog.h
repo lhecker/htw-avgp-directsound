@@ -19,8 +19,8 @@ private:
 	virtual BOOL OnInitDialog();
 
 	HICON m_hIcon;
-	direct_sound ds;
-	double_buffer<int16_t, 2> buffer;
+	direct_sound::context ds;
+	std::unique_ptr<direct_sound::playable> buffer;
 
 public:
 	afx_msg void OnPaint();

@@ -25,10 +25,23 @@ BOOL MainDialog::OnInitDialog() {
 	SetIcon(m_hIcon, TRUE); // Set big icon
 	SetIcon(m_hIcon, FALSE); // Set small icon
 
-	ds = direct_sound(m_hWnd);
-	auto provider = double_buffer<int16_t, 2>::create_sine_wave_provider(100);
-	buffer = ds.create_double_buffer<int16_t, 2>(192000, std::chrono::milliseconds(500), provider);
-	buffer.play(true);
+	ds = direct_sound::context(m_hWnd);
+
+	buffer = std::make_unique<direct_sound::double_buffer<int16_t, 2>>(
+		ds,
+		192000,
+		192000 / 2,
+		direct_sound::create_tone_ladder_provider<int16_t, 2>({{
+			264, // c
+			297, // d
+			330, // e
+			352, // f
+			396, // g
+			440, // a
+			495, // h
+		}})
+	);
+	buffer->play(true);
 
 	return TRUE; // return TRUE unless you set the focus to a control
 }
