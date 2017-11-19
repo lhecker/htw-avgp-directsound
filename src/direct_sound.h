@@ -130,7 +130,7 @@ public:
 };
 
 template<typename ValueType, size_t ChannelCount>
-class buffer_base {
+class buffer_trait {
 public:
 	static_assert(sizeof(ValueType) <= 4);
 	static_assert(ChannelCount <= 12);
@@ -140,7 +140,7 @@ public:
 };
 
 template<typename ValueType, size_t ChannelCount>
-class single_buffer : public buffer_base<ValueType, ChannelCount>, public playable {
+class single_buffer : public buffer_trait<ValueType, ChannelCount>, public playable {
 public:
 	explicit single_buffer() noexcept {
 	}
@@ -237,7 +237,7 @@ private:
 };
 
 template<typename ValueType, size_t ChannelCount>
-class double_buffer : public buffer_base<ValueType, ChannelCount>, public playable {
+class double_buffer : public buffer_trait<ValueType, ChannelCount>, public playable {
 private:
 	using Buffer = single_buffer<ValueType, ChannelCount>;
 
@@ -318,29 +318,32 @@ private:
 		static_cast<shared*>(context)->swap_and_fill();
 	}
 
+	std::unique_ptr<shared> m_shared;
+
 	// The order of these members is important:
 	// The notify handle has to be initialized before the wait handle and they
 	// must be destroyed in reverse order as the latter depends on the former.
 	std::unique_ptr<void, handle_deleter> m_notify_handle;
 	std::unique_ptr<void, wait_handle_deleter> m_wait_handle;
-	std::unique_ptr<shared> m_shared;
 };
 
-template<typename ValueType, size_t ChannelCount, typename SampleType = std::array<ValueType, ChannelCount>, typename SpanPairType = std::array<gsl::span<SampleType>, 2>>
-size_t fill_with_sine_wave(SpanPairType spans, buffer_info info, size_t frequency, size_t sample_number) {
+template<typename ValueType, size_t ChannelCount>
+__declspec(noinline) uint32_t fill_with_sine_wave(typename buffer_trait<ValueType, ChannelCount>::SpanPairType spans, buffer_info info, size_t frequency, uint32_t sample_number) {
 	constexpr double amplitude = std::numeric_limits<ValueType>::max();
 	const auto radiant_periods_per_sample = 2.0 * M_PI * double(frequency) / double(info.samples_per_secondond);
 
 	for (const auto span : spans) {
-		// Normally we'd iterate with begin()/end() over the gsl::span,
-		// but that involves bounds checking which inhibits the optimizer.
-		// -> Use pointer arithmetic instead.
-		// See: https://github.com/Microsoft/GSL/issues/376
+		// HACK:
+		//   Normally we'd iterate with for-each over the gsl::span,
+		//   but that involves bounds checking which inhibits the optimizer.
+		//   By using pointer arithmetic instead we, among others, remove 3
+		//   heavy conditional jumps from this loop's assembly.
+		//   See: https://github.com/Microsoft/GSL/issues/376
 		for (auto sample = span.data(), end = sample + span.size(); sample != end; ++sample) {
 			const auto period = double(sample_number) * radiant_periods_per_sample;
-			const auto value = ValueType(sin(period) * amplitude);
+			const auto value = ValueType(std::sin(period) * amplitude);
 
-			std::fill(sample->begin(), sample->end(), value);
+			sample->fill(value);
 
 			++sample_number;
 		}
@@ -351,29 +354,23 @@ size_t fill_with_sine_wave(SpanPairType spans, buffer_info info, size_t frequenc
 
 template<typename ValueType, size_t ChannelCount>
 auto create_sine_wave_provider(size_t frequency) {
-	using SampleType = std::array<ValueType, ChannelCount>;
-	using SpanPairType = std::array<gsl::span<SampleType>, 2>;
+	uint32_t sample_number = 0;
 
-	size_t sample_number = 0;
-
-	return [frequency, sample_number](SpanPairType spans, buffer_info info) mutable {
+	return [frequency, sample_number](buffer_trait<ValueType, ChannelCount>::SpanPairType spans, buffer_info info) mutable {
 		sample_number = fill_with_sine_wave<ValueType, ChannelCount>(spans, info, frequency, sample_number);
 	};
 }
 
 template<typename ValueType, size_t ChannelCount>
 auto create_tone_ladder_provider(std::vector<size_t> frequencies) {
-	using SampleType = std::array<ValueType, ChannelCount>;
-	using SpanPairType = std::array<gsl::span<SampleType>, 2>;
-
 	if (frequencies.empty()) {
 		throw std::invalid_argument("frequencies must not be empty");
 	}
 
 	size_t frequency_idx = 0;
-	size_t sample_number = 0;
+	uint32_t sample_number = 0;
 
-	return [frequencies, frequency_idx, sample_number](SpanPairType spans, buffer_info info) mutable {
+	return [frequencies, frequency_idx, sample_number](buffer_trait<ValueType, ChannelCount>::SpanPairType spans, buffer_info info) mutable {
 		if (spans[0].size() + spans[1].size() < 2) {
 			throw std::invalid_argument("spans contain less than 2 samples");
 		}
@@ -419,7 +416,7 @@ auto create_tone_ladder_provider(std::vector<size_t> frequencies) {
 		const auto radiant_periods_per_sample = 2.0 * M_PI * double(frequencies[frequency_idx]) / double(info.samples_per_secondond);
 		const auto sample1d = double(sample1) / double(std::numeric_limits<ValueType>::max());
 		const auto new_sample_rad = asin_2pi(sample1d, sample1 < sample2);
-		const auto new_sample = size_t(round(new_sample_rad / radiant_periods_per_sample));
+		const auto new_sample = uint32_t(round(new_sample_rad / radiant_periods_per_sample));
 
 		sample_number = new_sample;
 	};

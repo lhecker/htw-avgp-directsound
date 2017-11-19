@@ -30,7 +30,7 @@ BOOL MainDialog::OnInitDialog() {
 	buffer = std::make_unique<direct_sound::double_buffer<int16_t, 2>>(
 		ds,
 		192000,
-		192000 / 2,
+		192000 / 10,
 		direct_sound::create_tone_ladder_provider<int16_t, 2>({{
 			264, // c
 			297, // d
