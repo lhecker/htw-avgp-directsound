@@ -233,6 +233,9 @@
   <ItemGroup>
     <ClInclude Include="defer.h" />
     <ClInclude Include="direct_sound.h" />
+    <ClInclude Include="direct_sound_buffers.h" />
+    <ClInclude Include="direct_sound_context.h" />
+    <ClInclude Include="direct_sound_providers.h" />
     <ClInclude Include="MainApp.h" />
     <ClInclude Include="MainDialog.h" />
     <ClInclude Include="resource.h" />
@@ -241,7 +244,6 @@
     <ClInclude Include="utils.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="direct_sound.cpp" />
     <ClCompile Include="MainApp.cpp" />
     <ClCompile Include="MainDialog.cpp" />
     <ClCompile Include="stdafx.cpp">
@@ -257,6 +259,10 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="res\htwavgp.rc2" />
+    <None Include="res\pcm1.bin" />
+    <None Include="res\pcm2.bin" />
+    <None Include="res\rcdata1.bin" />
+    <None Include="res\Sound_22050_stereo_16Bit.pcm" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="res\htw-avgp.ico" />

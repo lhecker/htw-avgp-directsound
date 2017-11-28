@@ -7,6 +7,11 @@
 BEGIN_MESSAGE_MAP(MainDialog, CDialog)
 	ON_WM_PAINT()
 	ON_WM_QUERYDRAGICON()
+	ON_BN_CLICKED(IDC_C_DUR_TONELADDER, &MainDialog::OnBnClickedCDurToneladder)
+	ON_CONTROL_RANGE(BN_CLICKED, IDC_PIANO_264, IDC_PIANO_528, &MainDialog::OnBnClickedPiano)
+	ON_BN_CLICKED(IDC_C_DUR_TRIAD, &MainDialog::OnBnClickedCDurTriad)
+	ON_BN_CLICKED(IDC_PCM_SOUND, &MainDialog::OnBnClickedPcmSound)
+	ON_WM_HSCROLL()
 END_MESSAGE_MAP()
 
 MainDialog::MainDialog(CWnd* pParent) : CDialog(IDD_HTWAVGP_DIALOG, pParent) {
@@ -25,23 +30,17 @@ BOOL MainDialog::OnInitDialog() {
 	SetIcon(m_hIcon, TRUE); // Set big icon
 	SetIcon(m_hIcon, FALSE); // Set small icon
 
-	ds = direct_sound::context(m_hWnd);
+	auto set_scrollbar_values = [this](int id, int min, int max, int pos) {
+		auto slider = static_cast<CSliderCtrl*>(GetDlgItem(id));
+		slider->SetRangeMin(min);
+		slider->SetRangeMax(max);
+		slider->SetTicFreq(1);
+		slider->SetPos(pos);
+	};
+	set_scrollbar_values(IDC_VOLUME_SLIDER, DSBVOLUME_MIN, DSBVOLUME_MAX, DSBVOLUME_MAX);
+	set_scrollbar_values(IDC_PAN_SLIDER, DSBPAN_LEFT, DSBPAN_RIGHT, 0);
 
-	buffer = std::make_unique<direct_sound::double_buffer<int16_t, 2>>(
-		ds,
-		192000,
-		192000 / 10,
-		direct_sound::create_tone_ladder_provider<int16_t, 2>({{
-			264, // c
-			297, // d
-			330, // e
-			352, // f
-			396, // g
-			440, // a
-			495, // h
-		}})
-	);
-	buffer->play(true);
+	ds = direct_sound::context(m_hWnd);
 
 	return TRUE; // return TRUE unless you set the focus to a control
 }
@@ -57,7 +56,7 @@ void MainDialog::OnPaint() {
 
 	CPaintDC dc(this); // device context for painting
 
-	SendMessage(WM_ICONERASEBKGND, reinterpret_cast<WPARAM>(dc.m_hDC), 0);
+	SendMessageW(WM_ICONERASEBKGND, reinterpret_cast<WPARAM>(dc.m_hDC), 0);
 
 	// Center icon in client rectangle
 	int cxIcon = GetSystemMetrics(SM_CXICON);
@@ -75,4 +74,123 @@ void MainDialog::OnPaint() {
 // display while the user drags the minimized window.
 HCURSOR MainDialog::OnQueryDragIcon() {
 	return static_cast<HCURSOR>(m_hIcon);
+}
+
+void MainDialog::OnHScroll(UINT code, UINT pos, CScrollBar* scrollBar) {
+	UNREFERENCED_PARAMETER(pos);
+
+	if (code != SB_THUMBTRACK) {
+		return;
+	}
+
+	auto id = scrollBar->GetDlgCtrlID();
+
+	if (id != IDC_VOLUME_SLIDER && id != IDC_PAN_SLIDER) {
+		return;
+	}
+
+	auto value = reinterpret_cast<CSliderCtrl*>(scrollBar)->GetPos();
+	auto set_volume_pan = [id, value](std::unique_ptr<direct_sound::playable>& buffer) {
+		if (!buffer) {
+			return;
+		}
+
+		switch (id) {
+		case IDC_VOLUME_SLIDER:
+			buffer->set_volume(value);
+			break;
+		case IDC_PAN_SLIDER:
+			buffer->set_pan(value);
+			break;
+		}
+	};
+
+	set_volume_pan(c_dur_toneladder_buffer);
+
+	for (auto& buffer : piano_buffers) {
+		set_volume_pan(buffer);
+	}
+}
+
+void MainDialog::OnBnClickedCDurToneladder() {
+	auto button = static_cast<CButton*>(GetDlgItem(IDC_C_DUR_TONELADDER));
+	auto isChecked = (button->GetState() & BST_CHECKED) == BST_CHECKED;
+
+	if (!isChecked) {
+		c_dur_toneladder_buffer.reset();
+		return;
+	}
+
+	std::vector<size_t> toneladder(c_dur_toneladder.begin(), --c_dur_toneladder.end());
+	c_dur_toneladder_buffer = std::make_unique<direct_sound::double_buffer<int16_t, 2>>(
+		ds,
+		44100,
+		44100 / 4,
+		direct_sound::create_tone_ladder_provider<int16_t, 2>(toneladder)
+	);
+	c_dur_toneladder_buffer->play(true);
+}
+
+void MainDialog::OnBnClickedCDurTriad() {
+	auto button = static_cast<CButton*>(GetDlgItem(IDC_C_DUR_TRIAD));
+	auto isChecked = (button->GetState() & BST_CHECKED) == BST_CHECKED;
+
+	if (!isChecked) {
+		for (auto& buffer : c_dur_triad_buffer) {
+			buffer.reset();
+		}
+		return;
+	}
+
+	for (size_t i = 0; i < c_dur_triad_buffer.size(); ++i) {
+		c_dur_triad_buffer[i] = std::make_unique<direct_sound::double_buffer<int16_t, 2>>(
+			ds,
+			44100,
+			44100,
+			direct_sound::create_sine_wave_provider<int16_t, 2>(c_dur_toneladder[i * 2])
+		);
+	}
+	for (auto& buffer : c_dur_triad_buffer) {
+		buffer->play(true);
+	}
+}
+
+void MainDialog::OnBnClickedPcmSound() {
+	auto button = static_cast<CButton*>(GetDlgItem(IDC_PCM_SOUND));
+	auto isChecked = (button->GetState() & BST_CHECKED) == BST_CHECKED;
+
+	if (!isChecked) {
+		pcm_buffer.reset();
+		return;
+	}
+
+	const auto resource = load_resource(RT_RCDATA, IDR_RCDATA1);
+	std::vector<byte> pcm(resource.begin(), resource.end());
+
+	pcm_buffer = std::make_unique<direct_sound::double_buffer<int16_t, 2>>(
+		ds,
+		22050,
+		22050,
+		direct_sound::create_pcm_provider<int16_t, 2>(pcm)
+	);
+	pcm_buffer->play(true);
+}
+
+void MainDialog::OnBnClickedPiano(UINT sender) {
+	auto button = static_cast<CButton*>(GetDlgItem(sender));
+	auto isChecked = (button->GetState() & BST_CHECKED) == BST_CHECKED;
+	auto index = sender - IDC_PIANO_264;
+
+	if (isChecked) {
+		auto tone = c_dur_toneladder[index];
+		piano_buffers[index] = std::make_unique<direct_sound::single_buffer<int16_t, 2>>(
+			ds,
+			44100,
+			44100,
+			direct_sound::create_sine_wave_provider<int16_t, 2>(tone)
+		);
+		piano_buffers[index]->play(true);
+	} else {
+		piano_buffers[index].reset();
+	}
 }

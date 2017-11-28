@@ -39,6 +39,15 @@
     <ClInclude Include="defer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="direct_sound_buffers.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="direct_sound_providers.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="direct_sound_context.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="MainDialog.cpp">
@@ -53,9 +62,6 @@
     <ClCompile Include="utils.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="direct_sound.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="htwavgp.rc">
@@ -64,6 +70,16 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="res\htwavgp.rc2">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="res\pcm1.bin">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="res\pcm2.bin">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="res\Sound_22050_stereo_16Bit.pcm" />
+    <None Include="res\rcdata1.bin">
       <Filter>Resource Files</Filter>
     </None>
   </ItemGroup>

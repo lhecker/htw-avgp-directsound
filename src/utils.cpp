@@ -67,3 +67,29 @@ void debug_print(_In_z_ _Printf_format_string_ const wchar_t* const format, ...)
 
 	OutputDebugString(str);
 }
+
+gsl::span<const byte> load_resource(LPWSTR type, int name) {
+	const auto handle = GetModuleHandleW(nullptr);
+
+	const auto rc = FindResourceW(handle, MAKEINTRESOURCEW(name), type);
+	if (!rc) {
+		winrt::throw_last_error();
+	}
+
+	const auto rc_data = LoadResource(handle, rc);
+	if (!rc_data) {
+		winrt::throw_last_error();
+	}
+
+	const auto data = static_cast<const byte*>(LockResource(rc_data));
+	if (!data) {
+		winrt::throw_last_error();
+	}
+
+	const size_t size = SizeofResource(handle, rc);
+	if (!size) {
+		winrt::throw_last_error();
+	}
+
+	return gsl::make_span(data, size);
+}
