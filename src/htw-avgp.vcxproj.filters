@@ -72,16 +72,6 @@
     <None Include="res\htwavgp.rc2">
       <Filter>Resource Files</Filter>
     </None>
-    <None Include="res\pcm1.bin">
-      <Filter>Resource Files</Filter>
-    </None>
-    <None Include="res\pcm2.bin">
-      <Filter>Resource Files</Filter>
-    </None>
-    <None Include="res\Sound_22050_stereo_16Bit.pcm" />
-    <None Include="res\rcdata1.bin">
-      <Filter>Resource Files</Filter>
-    </None>
   </ItemGroup>
   <ItemGroup>
     <Image Include="res\htw-avgp.ico">

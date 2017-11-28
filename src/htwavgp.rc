@@ -80,7 +80,15 @@ IDR_MAINFRAME           ICON                    "res\\htw-avgp.ico"
 // RCDATA
 //
 
-IDR_RCDATA1             RCDATA                  "res\\Sound_22050_stereo_16Bit.pcm"
+IDR_SAMPLE_SOUND        RCDATA                  "res\\Sound_22050_stereo_16Bit.pcm"
+IDR_GUITAR_264          RCDATA                  "res\\guitar_c.raw"
+IDR_GUITAR_297          RCDATA                  "res\\guitar_d.raw"
+IDR_GUITAR_330          RCDATA                  "res\\guitar_e.raw"
+IDR_GUITAR_352          RCDATA                  "res\\guitar_f.raw"
+IDR_GUITAR_396          RCDATA                  "res\\guitar_g.raw"
+IDR_GUITAR_440          RCDATA                  "res\\guitar_a.raw"
+IDR_GUITAR_495          RCDATA                  "res\\guitar_h.raw"
+IDR_GUITAR_528          RCDATA                  "res\\guitar_c_high.raw"
 
 #endif    // German (Germany) resources
 /////////////////////////////////////////////////////////////////////////////
@@ -120,6 +128,7 @@ BEGIN
     CONTROL         "A",IDC_PIANO_440,"Button",BS_AUTOCHECKBOX | BS_PUSHLIKE | WS_TABSTOP,252,90,42,14
     CONTROL         "H",IDC_PIANO_495,"Button",BS_AUTOCHECKBOX | BS_PUSHLIKE | WS_TABSTOP,300,90,42,14
     CONTROL         "C",IDC_PIANO_528,"Button",BS_AUTOCHECKBOX | BS_PUSHLIKE | WS_TABSTOP,348,90,42,14
+    CONTROL         "Guitar Sound",IDC_TOGGLE_GUITAR,"Button",BS_AUTOCHECKBOX | BS_PUSHLIKE | WS_TABSTOP,216,54,180,18
 END
 
 

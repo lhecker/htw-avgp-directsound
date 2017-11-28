@@ -29,6 +29,39 @@ uint32_t fill_with_sine_wave(typename buffer_trait<ValueType, ChannelCount>::Spa
 	return sample_number % info.samples_per_second;
 }
 
+template<typename ValueType, size_t ChannelCount>
+uint32_t fill_with_pcm(typename buffer_trait<ValueType, ChannelCount>::SpanPairType spans, buffer_info info, std::vector<byte>& pcm, size_t pcm_pos, bool looping) {
+	const auto pcm_data = pcm.data();
+	const auto pcm_size = pcm.size();
+
+	for (const auto span : spans) {
+		const auto span_data = reinterpret_cast<byte*>(span.data());
+		const auto span_size = size_t(span.size_bytes());
+		size_t span_pos = 0;
+
+		while (span_pos < span_size) {
+			const auto pcm_remaining = pcm_size - pcm_pos;
+			const auto span_remaining = span_size - span_pos;
+
+			if (!looping && pcm_pos == pcm_size) {
+				memset(span_data, 0, span_remaining);
+				break;
+			}
+
+			const auto remaining = std::min(pcm_remaining, span_remaining);
+
+			memcpy(span_data + span_pos, pcm_data + span_pos, remaining);
+
+			span_pos += remaining;
+			pcm_pos += remaining;
+
+			if (looping && pcm_pos == pcm_size) {
+				pcm_pos = 0;
+			}
+		}
+	}
+}
+
 // Maps asin's result space from [-M_PI_2, +M_PI_2] to [0, 2*M_PI]
 inline double asin_2pi(double value, bool is_falling) {
 	auto result = asin(value);
@@ -45,10 +78,10 @@ inline double asin_2pi(double value, bool is_falling) {
 } // namespace detail
 
 template<typename ValueType, size_t ChannelCount>
-auto create_pcm_provider(std::vector<byte> pcm) {
+auto create_pcm_provider(std::vector<byte> pcm, bool looping) {
 	size_t pcm_pos = 0;
 
-	return [pcm, pcm_pos](buffer_trait<ValueType, ChannelCount>::SpanPairType spans, buffer_info info) mutable {
+	return [pcm, pcm_pos, looping](buffer_trait<ValueType, ChannelCount>::SpanPairType spans, buffer_info info) mutable {
 		UNREFERENCED_PARAMETER(info);
 
 		const auto pcm_data = pcm.data();
@@ -62,12 +95,59 @@ auto create_pcm_provider(std::vector<byte> pcm) {
 			while (span_pos < span_size) {
 				const auto pcm_remaining = pcm_size - pcm_pos;
 				const auto span_remaining = span_size - span_pos;
+
+				if (!looping && pcm_pos == pcm_size) {
+					memset(span_data, 0, span_remaining);
+					break;
+				}
+
 				const auto remaining = std::min(pcm_remaining, span_remaining);
-				
-				memcpy(span_data, pcm_data, remaining);
+
+				memcpy(span_data + span_pos, pcm_data + pcm_pos, remaining);
 
 				span_pos += remaining;
-				pcm_pos = (pcm_pos + remaining) % pcm_size;
+				pcm_pos += remaining;
+
+				if (looping && pcm_pos == pcm_size) {
+					pcm_pos = 0;
+				}
+			}
+		}
+	};
+}
+
+template<typename ValueType, size_t ChannelCount>
+auto create_pcm_series_provider(std::vector<std::vector<byte>> pcms) {
+	size_t pcms_pos = 0;
+	size_t pcm_pos = 0;
+
+	return [pcms, pcms_pos, pcm_pos](buffer_trait<ValueType, ChannelCount>::SpanPairType spans, buffer_info info) mutable {
+		UNREFERENCED_PARAMETER(info);
+
+		auto pcm_data = pcms[pcms_pos].data();
+		auto pcm_size = pcms[pcms_pos].size();
+
+		for (const auto span : spans) {
+			const auto span_data = reinterpret_cast<byte*>(span.data());
+			const auto span_size = size_t(span.size_bytes());
+			size_t span_pos = 0;
+
+			while (span_pos < span_size) {
+				const auto pcm_remaining = pcm_size - pcm_pos;
+				const auto span_remaining = span_size - span_pos;
+				const auto remaining = std::min(pcm_remaining, span_remaining);
+
+				memcpy(span_data + span_pos, pcm_data + pcm_pos, remaining);
+
+				span_pos += remaining;
+				pcm_pos += remaining;
+
+				if (pcm_pos == pcm_size) {
+					pcms_pos = (pcms_pos + 1) % pcms.size();
+					pcm_data = pcms[pcms_pos].data();
+					pcm_size = pcms[pcms_pos].size();
+					pcm_pos = 0;
+				}
 			}
 		}
 	};
@@ -83,7 +163,7 @@ auto create_sine_wave_provider(size_t frequency) {
 }
 
 template<typename ValueType, size_t ChannelCount>
-auto create_tone_ladder_provider(std::vector<size_t> frequencies) {
+auto create_sine_wave_toneladder_provider(std::vector<size_t> frequencies) {
 	if (frequencies.empty()) {
 		throw std::invalid_argument("frequencies must not be empty");
 	}

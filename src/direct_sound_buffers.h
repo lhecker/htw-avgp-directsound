@@ -253,7 +253,7 @@ public:
 			std::array<DSBPOSITIONNOTIFY, 2> positions{{
 				{0, m_notify_handle.get()},
 				{DWORD(m_shared->buffer.buffer_bytes() / 2), m_notify_handle.get()},
-				}};
+			}};
 			auto notify = m_shared->buffer.com().as<IDirectSoundNotify8>();
 			winrt::check_hresult(notify->SetNotificationPositions(DWORD(positions.size()), positions.data()));
 		}

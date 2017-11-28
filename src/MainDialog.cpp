@@ -4,14 +4,21 @@
 
 #include "MainApp.h"
 
+static std::vector<byte> load_rcdata_as_vector(int name) {
+	const auto resource = load_resource(RT_RCDATA, name);
+	std::vector<byte> data(resource.begin(), resource.end());
+	return data;
+}
+
 BEGIN_MESSAGE_MAP(MainDialog, CDialog)
 	ON_WM_PAINT()
 	ON_WM_QUERYDRAGICON()
+	ON_WM_HSCROLL()
 	ON_BN_CLICKED(IDC_C_DUR_TONELADDER, &MainDialog::OnBnClickedCDurToneladder)
-	ON_CONTROL_RANGE(BN_CLICKED, IDC_PIANO_264, IDC_PIANO_528, &MainDialog::OnBnClickedPiano)
 	ON_BN_CLICKED(IDC_C_DUR_TRIAD, &MainDialog::OnBnClickedCDurTriad)
 	ON_BN_CLICKED(IDC_PCM_SOUND, &MainDialog::OnBnClickedPcmSound)
-	ON_WM_HSCROLL()
+	ON_BN_CLICKED(IDC_TOGGLE_GUITAR, &MainDialog::OnBnClickedToggleGuitar)
+	ON_CONTROL_RANGE(BN_CLICKED, IDC_PIANO_264, IDC_PIANO_528, &MainDialog::OnBnClickedPiano)
 END_MESSAGE_MAP()
 
 MainDialog::MainDialog(CWnd* pParent) : CDialog(IDD_HTWAVGP_DIALOG, pParent) {
@@ -121,13 +128,28 @@ void MainDialog::OnBnClickedCDurToneladder() {
 		return;
 	}
 
-	std::vector<size_t> toneladder(c_dur_toneladder.begin(), --c_dur_toneladder.end());
-	c_dur_toneladder_buffer = std::make_unique<direct_sound::double_buffer<int16_t, 2>>(
-		ds,
-		44100,
-		44100 / 4,
-		direct_sound::create_tone_ladder_provider<int16_t, 2>(toneladder)
-	);
+	if (use_guitar_sound) {
+		std::vector<std::vector<byte>> pcms;
+		for (auto rc : guitar_c_dur_toneladder) {
+			pcms.emplace_back(load_rcdata_as_vector(rc));
+		}
+
+		c_dur_toneladder_buffer = std::make_unique<direct_sound::double_buffer<int16_t, 2>>(
+			ds,
+			22050,
+			22050,
+			direct_sound::create_pcm_series_provider<int16_t, 2>(pcms)
+		);
+	} else {
+		std::vector<size_t> toneladder(c_dur_toneladder.begin(), c_dur_toneladder.end());
+		c_dur_toneladder_buffer = std::make_unique<direct_sound::double_buffer<int16_t, 2>>(
+			ds,
+			44100,
+			44100 / 4,
+			direct_sound::create_sine_wave_toneladder_provider<int16_t, 2>(toneladder)
+		);
+	}
+
 	c_dur_toneladder_buffer->play(true);
 }
 
@@ -143,13 +165,25 @@ void MainDialog::OnBnClickedCDurTriad() {
 	}
 
 	for (size_t i = 0; i < c_dur_triad_buffer.size(); ++i) {
-		c_dur_triad_buffer[i] = std::make_unique<direct_sound::double_buffer<int16_t, 2>>(
-			ds,
-			44100,
-			44100,
-			direct_sound::create_sine_wave_provider<int16_t, 2>(c_dur_toneladder[i * 2])
-		);
+		if (use_guitar_sound) {
+			const auto pcm = load_rcdata_as_vector(guitar_c_dur_toneladder[i * 2]);
+			c_dur_triad_buffer[i] = std::make_unique<direct_sound::double_buffer<int16_t, 2>>(
+				ds,
+				22050,
+				22050,
+				direct_sound::create_pcm_provider<int16_t, 2>(pcm, true)
+			);
+		} else {
+			auto tone = c_dur_toneladder[i * 2];
+			c_dur_triad_buffer[i] = std::make_unique<direct_sound::single_buffer<int16_t, 2>>(
+				ds,
+				44100,
+				44100,
+				direct_sound::create_sine_wave_provider<int16_t, 2>(tone)
+			);
+		}
 	}
+
 	for (auto& buffer : c_dur_triad_buffer) {
 		buffer->play(true);
 	}
@@ -164,16 +198,19 @@ void MainDialog::OnBnClickedPcmSound() {
 		return;
 	}
 
-	const auto resource = load_resource(RT_RCDATA, IDR_RCDATA1);
-	std::vector<byte> pcm(resource.begin(), resource.end());
-
+	const auto pcm = load_rcdata_as_vector(IDR_SAMPLE_SOUND);
 	pcm_buffer = std::make_unique<direct_sound::double_buffer<int16_t, 2>>(
 		ds,
 		22050,
 		22050,
-		direct_sound::create_pcm_provider<int16_t, 2>(pcm)
+		direct_sound::create_pcm_provider<int16_t, 2>(pcm, true)
 	);
 	pcm_buffer->play(true);
+}
+
+void MainDialog::OnBnClickedToggleGuitar() {
+	auto button = static_cast<CButton*>(GetDlgItem(IDC_TOGGLE_GUITAR));
+	use_guitar_sound = (button->GetState() & BST_CHECKED) == BST_CHECKED;
 }
 
 void MainDialog::OnBnClickedPiano(UINT sender) {
@@ -181,7 +218,20 @@ void MainDialog::OnBnClickedPiano(UINT sender) {
 	auto isChecked = (button->GetState() & BST_CHECKED) == BST_CHECKED;
 	auto index = sender - IDC_PIANO_264;
 
-	if (isChecked) {
+	if (!isChecked) {
+		piano_buffers[index].reset();
+		return;
+	}
+
+	if (use_guitar_sound) {
+		const auto pcm = load_rcdata_as_vector(guitar_c_dur_toneladder[index]);
+		piano_buffers[index] = std::make_unique<direct_sound::double_buffer<int16_t, 2>>(
+			ds,
+			22050,
+			22050,
+			direct_sound::create_pcm_provider<int16_t, 2>(pcm, true)
+		);
+	} else {
 		auto tone = c_dur_toneladder[index];
 		piano_buffers[index] = std::make_unique<direct_sound::single_buffer<int16_t, 2>>(
 			ds,
@@ -189,8 +239,7 @@ void MainDialog::OnBnClickedPiano(UINT sender) {
 			44100,
 			direct_sound::create_sine_wave_provider<int16_t, 2>(tone)
 		);
-		piano_buffers[index]->play(true);
-	} else {
-		piano_buffers[index].reset();
 	}
+
+	piano_buffers[index]->play(true);
 }
