@@ -198,8 +198,8 @@ public:
 
 		// Initialize `lock` early in order for the buffer to be unlocked if any exceptions are thrown below.
 		buffer_lock<SampleType> lock(m_com, {{
-			{static_cast<SampleType*>(base1), len1 / sizeof(SampleType)},
-			{static_cast<SampleType*>(base2), len2 / sizeof(SampleType)},
+			{static_cast<SampleType*>(base1), ptrdiff_t(len1 / sizeof(SampleType))},
+			{static_cast<SampleType*>(base2), ptrdiff_t(len2 / sizeof(SampleType))},
 		}});
 
 		constexpr auto align_mask = alignof(SampleType)-1;
@@ -303,7 +303,7 @@ private:
 		std::atomic<uint_fast8_t> state = 0;
 	};
 
-	static void wait_callback(PVOID context, BOOLEAN) noexcept {
+	static void NTAPI wait_callback(PVOID context, BOOLEAN) noexcept {
 		static_cast<shared*>(context)->swap_and_fill();
 	}
 

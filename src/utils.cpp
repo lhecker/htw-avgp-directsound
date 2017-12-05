@@ -86,10 +86,10 @@ gsl::span<const byte> load_resource(LPWSTR type, int name) {
 		winrt::throw_last_error();
 	}
 
-	const size_t size = SizeofResource(handle, rc);
+	const ptrdiff_t size = SizeofResource(handle, rc);
 	if (!size) {
 		winrt::throw_last_error();
 	}
 
-	return gsl::make_span(data, size);
+	return {data, size};
 }
